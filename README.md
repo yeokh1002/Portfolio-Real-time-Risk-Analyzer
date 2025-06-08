@@ -1,6 +1,6 @@
 # Portfolio Risk Analyzer
 
-## Description.
+## Description
 
 An institutional-grade real-time portfolio analysis tool that provides stock price information, calculates advanced risk metrics, and visualizes asset allocation—built with Python and Streamlit.
 
