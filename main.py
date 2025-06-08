@@ -1,0 +1,464 @@
+import streamlit as st
+import pandas as pd
+import numpy as np
+import requests
+import plotly.graph_objects as go
+import plotly.express as px
+from datetime import datetime, timedelta
+import yfinance as yf
+
+
+if 'portfolio' not in st.session_state:
+    st.session_state.portfolio = pd.DataFrame(columns=[
+        'Ticker', 'Shares', 'Avg Price', 'Date Added', 'Current Price', 'Value', 'P/L'
+    ])
+
+
+# Portfolio Management Functions
+def add_to_portfolio(ticker, shares, price):
+    """Add a new position to the portfolio"""
+    new_position = {
+        'Ticker': ticker.upper(),
+        'Shares': float(shares),
+        'Avg Price': float(price),
+        'Date Added': datetime.now().strftime('%Y-%m-%d'),
+        'Current Price': 0,
+        'Value': 0,
+        'P/L': 0
+    }
+    st.session_state.portfolio = pd.concat([
+        st.session_state.portfolio,
+        pd.DataFrame([new_position])
+    ], ignore_index=True)
+    update_portfolio_values()
+
+
+def remove_position(index):
+    """Remove a position from the portfolio"""
+    st.session_state.portfolio = st.session_state.portfolio.drop(index).reset_index(drop=True)
+    update_portfolio_values()
+
+
+def update_portfolio_values():
+    """Update current values and P/L for all positions"""
+    if not st.session_state.portfolio.empty:
+        daily_returns = pd.DataFrame()  # Initialize empty DataFrame for returns
+
+        for i, row in st.session_state.portfolio.iterrows():
+            try:
+                ticker = yf.Ticker(row['Ticker'])
+                hist = ticker.history(period='30d')
+                current_price = hist['Close'].iloc[-1]
+                value = current_price * row['Shares']
+                pl = value - (row['Avg Price'] * row['Shares'])
+
+                # Store for daily returns
+                if 'Close' in hist.columns:
+                    ticker_returns = hist['Close'].pct_change().rename(row['Ticker'])
+                    if daily_returns.empty:
+                        daily_returns = ticker_returns.to_frame()
+                    else:
+                        daily_returns[row['Ticker']] = ticker_returns
+
+                st.session_state.portfolio.at[i, 'Current Price'] = current_price
+                st.session_state.portfolio.at[i, 'Value'] = value
+                st.session_state.portfolio.at[i, 'P/L'] = pl
+            except Exception as e:
+                st.session_state.portfolio.at[i, 'Current Price'] = np.nan
+                st.session_state.portfolio.at[i, 'Value'] = np.nan
+                st.session_state.portfolio.at[i, 'P/L'] = np.nan
+
+        # Store the daily returns in session state
+        st.session_state.daily_returns = daily_returns.dropna()
+
+
+def display_risk_metrics():
+    if st.session_state.portfolio.empty or 'daily_returns' not in st.session_state or st.session_state.daily_returns.empty:
+        return
+
+    st.subheader("📉 Portfolio Risk Metrics")
+
+    daily_returns = st.session_state.daily_returns
+    portfolio_value = st.session_state.portfolio['Value'].sum()
+
+    valid_tickers = [t for t in st.session_state.portfolio['Ticker'] if t in daily_returns.columns]
+    weights = st.session_state.portfolio.set_index('Ticker')['Value'][valid_tickers] / portfolio_value
+
+    # Ensure we only use returns for tickers we have weights for
+    daily_returns = daily_returns[valid_tickers]
+
+    # Calculate portfolio returns
+    port_returns = daily_returns.dot(weights)
+
+    # Risk metrics
+    volatility = np.std(port_returns) * np.sqrt(252)
+    sharpe_ratio = np.mean(port_returns) / np.std(port_returns) * np.sqrt(252)  # Assuming risk-free rate = 0
+
+    col1, col2 = st.columns(2)
+    col1.metric("Annualized Volatility", f"{volatility:.2%}")
+    col2.metric("Sharpe Ratio", f"{sharpe_ratio:.2f}")
+
+    st.line_chart(port_returns.cumsum(), height=300)
+
+    # Correlation matrix
+    st.write("### Correlation Matrix")
+    corr = daily_returns.corr()
+    st.dataframe(corr.style.background_gradient(cmap="coolwarm"), use_container_width=True)
+
+
+# Portfolio Display Functions
+def display_portfolio():
+    """Display the current portfolio with editing options"""
+    st.subheader("📊 Your Portfolio")
+
+    if st.session_state.portfolio.empty:
+        st.info("Your portfolio is empty. Add positions using the form below.")
+        return
+
+    # Display portfolio metrics
+    total_value = st.session_state.portfolio['Value'].sum()
+    total_cost = (st.session_state.portfolio['Avg Price'] * st.session_state.portfolio['Shares']).sum()
+    total_pl = total_value - total_cost
+    pl_percent = (total_pl / total_cost * 100) if total_cost > 0 else 0
+
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Total Value", f"${total_value:,.2f}")
+    col2.metric("Total P/L", f"${total_pl:,.2f}", f"{pl_percent:.2f}%")
+    col3.metric("Positions", len(st.session_state.portfolio))
+
+    # Display editable portfolio table
+    with st.expander("View/Edit Portfolio", expanded=True):
+
+        st.session_state.portfolio['Date Added'] = pd.to_datetime(
+            st.session_state.portfolio['Date Added'], errors='coerce'
+        )
+        edited_df = st.data_editor(
+            st.session_state.portfolio,
+            column_config={
+                "Ticker": st.column_config.TextColumn("Symbol", width="small"),
+                "Shares": st.column_config.NumberColumn("Shares", format="%.2f"),
+                "Avg Price": st.column_config.NumberColumn("Avg Price", format="$%.2f"),
+                "Current Price": st.column_config.NumberColumn("Current", format="$%.2f"),
+                "Value": st.column_config.NumberColumn("Value", format="$%.2f"),
+                "P/L": st.column_config.NumberColumn("P/L", format="$%.2f"),
+                "Date Added": st.column_config.DateColumn("Date Added")
+            },
+            hide_index=True,
+            use_container_width=True
+        )
+
+        if not edited_df.equals(st.session_state.portfolio):
+            st.session_state.portfolio = edited_df
+            update_portfolio_values()
+            st.rerun()
+
+        cols = st.columns(8)
+        for i in range(len(st.session_state.portfolio)):
+            if cols[i % 8].button(f"Remove {st.session_state.portfolio.iloc[i]['Ticker']}", key=f"del_{i}"):
+                remove_position(i)
+                st.rerun()
+
+
+# Portfolio Add Form
+def portfolio_add_form():
+    """Form to add new positions to portfolio"""
+    st.subheader("➕ Add New Position")
+    with st.form("add_position", clear_on_submit=True):
+        col1, col2, col3 = st.columns(3)
+        ticker = col1.text_input("Stock Symbol", placeholder="AAPL")
+        shares = col2.number_input("Shares", min_value=0.01, step=0.01, value=1.0)
+        price = col3.number_input("Purchase Price", min_value=0.01, step=0.01, value=100.0)
+
+        if st.form_submit_button("Add to Portfolio"):
+            if ticker:
+                try:
+                    # Verify ticker is valid
+                    stock = yf.Ticker(ticker)
+                    if stock.history(period='1d').empty:
+                        st.error("Invalid stock symbol")
+                    else:
+                        add_to_portfolio(ticker, shares, price)
+                        st.success(f"Added {shares} shares of {ticker.upper()} at ${price:.2f}")
+                except:
+                    st.error("Error verifying stock symbol")
+            else:
+                st.warning("Please enter a stock symbol")
+
+def display_portfolio_performance():
+    """Show performance charts for the portfolio"""
+    if st.session_state.portfolio.empty:
+        return
+
+    st.subheader("📈 Portfolio Performance")
+
+    st.write("### Asset Allocation")
+    allocation = st.session_state.portfolio.groupby('Ticker')['Value'].sum().reset_index()
+    fig = px.pie(
+        allocation,
+        values='Value',
+        names='Ticker',
+        hole=0.3,
+        color_discrete_sequence=px.colors.sequential.RdBu
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+    # Historical performance
+    st.write("### Historical Performance")
+    if len(st.session_state.portfolio) > 0:
+        try:
+            # Get historical data for all tickers
+            tickers = " ".join(st.session_state.portfolio['Ticker'].tolist())
+            data = yf.download(tickers, period="1y", group_by='ticker')
+
+            # Calculate portfolio value over time
+            portfolio_history = pd.DataFrame()
+            for ticker in st.session_state.portfolio['Ticker']:
+                shares = st.session_state.portfolio.loc[
+                    st.session_state.portfolio['Ticker'] == ticker, 'Shares'
+                ].values[0]
+                if ticker in data:
+                    portfolio_history[ticker] = data[ticker]['Close'] * shares
+
+            portfolio_history['Total Value'] = portfolio_history.sum(axis=1)
+
+            fig = px.line(
+                portfolio_history,
+                y='Total Value',
+                title='Portfolio Value Over Time'
+            )
+            st.plotly_chart(fig, use_container_width=True)
+        except:
+            st.warning("Could not load historical performance data")
+
+
+def export_portfolio():
+    st.subheader("🧾 Export Portfolio")
+    if not st.session_state.portfolio.empty:
+        csv = st.session_state.portfolio.to_csv(index=False)
+        st.download_button("📥 Download CSV", csv, file_name="portfolio.csv", mime="text/csv")
+def portfolio_tab():
+    tab1, tab2 = st.tabs(["Current Portfolio", "Add Positions"])
+    with tab1:
+        display_portfolio()
+        display_portfolio_performance()
+        display_risk_metrics()
+        display_advanced_metrics()  # New metrics
+        export_portfolio()
+    with tab2:
+        portfolio_add_form()
+
+
+def display_market_data():
+    """Display market data for a selected ticker"""
+    st.subheader("🔍 Market Data Search")
+
+    with st.form("market_data_form"):
+        col1, col2, col3 = st.columns([2, 2, 1])
+        symbol = col1.text_input("Stock Symbol", value="AAPL").upper()
+        period = col2.selectbox("Time Period", ["1mo", "3mo", "6mo", "1y", "2y", "5y", "10y"], index=3)
+
+        if st.form_submit_button("Get Data"):
+            st.session_state.symbol = symbol
+            st.session_state.period = period
+
+    symbol = st.session_state.get('symbol', 'AAPL')
+    period = st.session_state.get('period', '1y')
+
+    try:
+        stock = yf.Ticker(symbol)
+        st.subheader(f"📊 {symbol} Historical Data")
+
+        hist = stock.history(period=period)
+
+        if hist.empty:
+            st.warning(f"No data available for {symbol}")
+            return
+
+        # Calculate daily returns
+        hist['Daily Return'] = hist['Close'].pct_change()
+
+        tab1, tab2, tab3 = st.tabs(["📈 Price Chart", "📊 Volume", "📉 Returns"])
+
+        with tab1:
+            # Price chart with moving averages
+            fig = go.Figure()
+
+            # Candlestick
+            fig.add_trace(go.Candlestick(
+                x=hist.index,
+                open=hist['Open'],
+                high=hist['High'],
+                low=hist['Low'],
+                close=hist['Close'],
+                name='OHLC'
+            ))
+
+            # 20-day moving average
+            hist['MA20'] = hist['Close'].rolling(20).mean()
+            fig.add_trace(go.Scatter(
+                x=hist.index,
+                y=hist['MA20'],
+                name='20-Day MA',
+                line=dict(color='orange', width=2)
+            ))
+
+            # 50-day moving average
+            hist['MA50'] = hist['Close'].rolling(50).mean()
+            fig.add_trace(go.Scatter(
+                x=hist.index,
+                y=hist['MA50'],
+                name='50-Day MA',
+                line=dict(color='green', width=2)
+            ))
+
+            fig.update_layout(
+                title=f"{symbol} Price History",
+                xaxis_title='Date',
+                yaxis_title='Price ($)',
+                hovermode="x unified",
+                height=500
+            )
+
+            st.plotly_chart(fig, use_container_width=True)
+
+        with tab2:
+            # Volume chart
+            fig = go.Figure()
+            colors = ['red' if row['Open'] > row['Close'] else 'green' for _, row in hist.iterrows()]
+
+            fig.add_trace(go.Bar(
+                x=hist.index,
+                y=hist['Volume'],
+                name='Volume',
+                marker_color=colors
+            ))
+
+            fig.update_layout(
+                title=f"{symbol} Trading Volume",
+                xaxis_title='Date',
+                yaxis_title='Volume',
+                height=400
+            )
+
+            st.plotly_chart(fig, use_container_width=True)
+
+        with tab3:
+            fig = go.Figure()
+
+            fig.add_trace(go.Scatter(
+                x=hist.index,
+                y=hist['Daily Return'].cumsum(),
+                name='Cumulative Returns',
+                line=dict(color='blue', width=2)
+            ))
+
+            fig.update_layout(
+                title=f"{symbol} Cumulative Returns",
+                xaxis_title='Date',
+                yaxis_title='Cumulative Return',
+                hovermode="x unified",
+                height=400
+            )
+
+            st.plotly_chart(fig, use_container_width=True)
+
+            # Display key metrics
+            st.subheader("Key Statistics")
+
+            total_return = (hist['Close'].iloc[-1] / hist['Close'].iloc[0] - 1) * 100
+            annualized_vol = hist['Daily Return'].std() * np.sqrt(252) * 100
+            max_drawdown = (hist['Close'].cummax() - hist['Close']).max() / hist['Close'].cummax().max() * 100
+
+            col1, col2, col3 = st.columns(3)
+            col1.metric("Total Return", f"{total_return:.2f}%")
+            col2.metric("Annualized Volatility", f"{annualized_vol:.2f}%")
+            col3.metric("Max Drawdown", f"{max_drawdown:.2f}%")
+
+        try:
+            info = stock.info
+            st.subheader("ℹ️ Company Information")
+
+            if 'longName' in info:
+                st.write(f"**Company:** {info.get('longName', 'N/A')}")
+            if 'sector' in info:
+                st.write(f"**Sector:** {info.get('sector', 'N/A')}")
+            if 'industry' in info:
+                st.write(f"**Industry:** {info.get('industry', 'N/A')}")
+            if 'website' in info:
+                st.write(f"**Website:** {info.get('website', 'N/A')}")
+            if 'longBusinessSummary' in info:
+                with st.expander("Business Summary"):
+                    st.write(info.get('longBusinessSummary', 'N/A'))
+        except:
+            pass
+
+    except Exception as e:
+        st.error(f"Error fetching data for {symbol}: {str(e)}")
+
+
+def display_advanced_metrics():
+    if st.session_state.portfolio.empty:
+        return
+
+    st.subheader("📊 Advanced Portfolio Metrics")
+
+    # Calculate metrics
+    daily_returns = st.session_state.daily_returns.mean(axis=1)  # Portfolio returns
+    weights = st.session_state.portfolio['Value'] / st.session_state.portfolio['Value'].sum()
+
+    # Max Drawdown
+    cum_returns = (1 + daily_returns).cumprod()
+    rolling_max = cum_returns.cummax()
+    drawdown = (cum_returns - rolling_max) / rolling_max
+    max_dd = drawdown.min()
+
+    # Sortino Ratio (assuming 0% risk-free rate)
+    downside_returns = daily_returns[daily_returns < 0]
+    sortino = daily_returns.mean() / downside_returns.std() * np.sqrt(252)
+
+    # Herfindahl Index
+    hhi = (weights ** 2).sum()
+
+    # var
+    var_95 = np.percentile(daily_returns, 5)  # 95% confidence
+    cvar = daily_returns[daily_returns <= var_95].mean()
+
+    # herfindahl
+    herfindahl_index = (weights ** 2).sum()  # 1 = concentrated, ~0 = diversified
+
+    # Display in columns
+    col1, col2, col3= st.columns(3)
+    col1.metric("Max Drawdown", f"{max_dd:.2%}")
+    col2.metric("Sortino Ratio", f"{sortino:.2f}")
+    col3.metric("Concentration (HHI)", f"{hhi:.3f}")
+    col4, col5,col6 = st.columns(3)
+    col4.metric("95% VaR (1-Day)", f"{var_95:.3f}")
+    col5.metric("CVaR (Tail Loss)", f"{cvar:.3f}")
+    col6.metric("Herfindahl Index", f"{herfindahl_index:.3f}")
+
+    try:
+        sectors = []
+        for ticker in st.session_state.portfolio['Ticker']:
+            sector = yf.Ticker(ticker).info.get('sector', 'Unknown')
+            sectors.append(sector)
+
+        sector_exposure = pd.Series(sectors).value_counts(normalize=True)
+        fig = px.pie(sector_exposure, names=sector_exposure.index, values=sector_exposure.values)
+        st.plotly_chart(fig, use_container_width=True)
+    except:
+        pass
+
+def main():
+    st.title("📈 Stock Portfolio Tracker")
+
+    tab1, tab2 = st.tabs(["Market Data", "My Portfolio"])
+
+    with tab1:
+        display_market_data()  # This will show the new market data section
+
+    with tab2:
+        portfolio_tab()
+
+
+if __name__ == "__main__":
+    main()
