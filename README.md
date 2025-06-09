@@ -29,13 +29,14 @@ An institutional-grade real-time portfolio analysis tool that provides stock pri
 - Pip package manager
 
 ### Installation
-1. Clone the repo:
+1. Clone the repo.
    ```bash
    git clone https://github.com/yeokh1002/Portfolio-Real-time-Risk-Analyzer.git
 2. Navigate to the directory.
    ```bash
    cd Portfolio-Real-time-Risk-Analyzer
-3. ```bash
+3. Run the streamlit application.
+   ```bash
    streamlit run main.py
 4. Navigate to **My Portfolio** -> **Add Position** to start adding portfolio positions.
 
