@@ -1,4 +1,4 @@
-# Portfolio Risk Analyzer
+# Portfolio Risk Analyzer and Optimizer
 
 ## Description
 
@@ -6,11 +6,11 @@ An institutional-grade real-time portfolio analysis tool that provides stock pri
 
 ## Features
 
-- **Risk Analytics incl. VaR, Conditional VaR, Max drawdown, volatility tracking, Sharpe, Sortino, Calmar ratios.**  
-- **Correlation Matrix, Portfolio Value and PnL Tracking, Internal Excel Export Tool**
-- **User Authentication, Session Persistence**
-- **Portfolio Optimization Suggestions**
-- **Efficient-Frontier-based Optimization Strategies and Monte Carlo Simulations**
+- Risk Analytics incl. VaR, Conditional VaR, Max drawdown, volatility tracking, Sharpe, Sortino, Calmar ratios.
+- Correlation Matrix, Portfolio Value and PnL Tracking, Internal Excel Export Tool
+- User Authentication, Session Persistence
+- Portfolio Optimization Suggestions
+- Efficient-Frontier-based Optimization Strategies and Monte Carlo Simulations
 
 ## Demo
 **Trading Volume Tracking**
