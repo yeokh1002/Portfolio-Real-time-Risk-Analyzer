@@ -2,7 +2,7 @@
 
 ## Description
 
-An institutional-grade real-time portfolio analysis tool that provides stock price information, calculates advanced risk metrics, and visualizes asset allocation—built with Python and Streamlit.
+An institutional-grade real-time portfolio analysis tool that provides stock price information, calculates advanced risk metrics, visualizes asset allocation, runs advanced simulations and provides optimization suggestions-built with Python and Streamlit.
 
 ## Features
 
