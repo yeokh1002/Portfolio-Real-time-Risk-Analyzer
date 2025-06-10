@@ -1,16 +1,19 @@
-# Portfolio Risk Analyzer and Optimizer
 
 ## Description
 
-A real-time portfolio analysis tool that provides stock price information, calculates advanced risk metrics, visualizes asset allocation, runs advanced simulations and provides optimization suggestions-built with Python and Streamlit.
+A real-time portfolio analysis tool that provides stock price information, calculates advanced risk metrics, runs factor analysis, visualizes asset allocation, runs advanced simulations and stress tests, and provides optimization suggestions-built with Python and Streamlit.
 
 ## Features
 
-- Risk Analytics incl. VaR, Conditional VaR, Max drawdown, volatility tracking, Sharpe, Sortino, Calmar ratios.
-- Correlation Matrix, Portfolio Value and PnL Tracking, Internal Excel Export Tool
 - User Authentication, Session Persistence
-- Portfolio Optimization Suggestions
-- Efficient-Frontier-based Optimization Strategies and Monte Carlo Simulations
+- Correlation Analysis 
+- Risk Analytics including VaR, Conditional VaR, Max drawdown, Volatility Tracking, Sharpe, Sortino, HHI Index.
+- Efficient-Frontier-based Optimization Tool with Suggestions.
+- Monte-Carlo Simulations
+- Stress Testing under Custom Market Scenarios
+- Company Information and Market Visualizations like Volume Trends and Cumulative Returns
+- Factor Analysis on Common Market Factors
+- Internal Excel Export Tool
 
 ## Demo
 **Trading Volume Tracking**
@@ -21,6 +24,11 @@ A real-time portfolio analysis tool that provides stock price information, calcu
 **Portfolio Risk Metrics**
 ![image](https://github.com/user-attachments/assets/e47fab28-7fef-4d61-8b81-3128dbfae492)
 ![image](https://github.com/user-attachments/assets/9eb8f43d-eb62-4b2f-b565-59f66d6fa7eb)
+**Factor Analysis**
+![image](https://github.com/user-attachments/assets/840a0f4d-355f-4607-be9a-92c8a3f75b51)
+![image](https://github.com/user-attachments/assets/c82def3a-c06a-4bb7-9106-23b996fcad44)
+**Stress Testing**
+![image](https://github.com/user-attachments/assets/ff1eda22-730f-4ba2-8536-616ebf099a49)
 
 ## Quick Start
 
