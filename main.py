@@ -8,6 +8,8 @@ from datetime import datetime, timedelta
 import yfinance as yf
 from scipy.optimize import minimize
 import matplotlib.pyplot as plt
+
+
 if 'portfolio' not in st.session_state:
     st.session_state.portfolio = pd.DataFrame(columns=[
         'Ticker', 'Shares', 'Avg Price', 'Date Added', 'Current Price', 'Value', 'P/L'
@@ -289,7 +291,6 @@ def display_portfolio_performance():
             st.warning("Could not load historical performance data")
 
 def optimize_portfolio():
-    """Optimize portfolio weights to maximize Sharpe Ratio"""
     if 'daily_returns' not in st.session_state or st.session_state.daily_returns.empty:
         st.warning("Not enough data to optimize portfolio.")
         return
@@ -347,18 +348,7 @@ def export_portfolio():
     if not st.session_state.portfolio.empty:
         csv = st.session_state.portfolio.to_csv(index=False)
         st.download_button("📥 Download CSV", csv, file_name="portfolio.csv", mime="text/csv")
-def portfolio_tab():
-    tab1, tab2 = st.tabs(["Current Portfolio", "Add Positions"])
-    with tab1:
-        display_portfolio()
-        display_portfolio_performance()
-        display_risk_metrics()
-        display_advanced_metrics()  # New metrics
-        optimize_portfolio()
-        efficient_frontier_and_monte_carlo()
-        export_portfolio()
-    with tab2:
-        portfolio_add_form()
+
 
 def display_market_data():
     """Display market data for a selected ticker"""
@@ -559,8 +549,137 @@ def display_advanced_metrics():
         st.plotly_chart(fig, use_container_width=True)
     except:
         pass
+def factor_analysis():
+    """Perform factor analysis on the portfolio"""
+    if st.session_state.portfolio.empty:
+        st.warning("Your portfolio is empty. Add positions to perform factor analysis.")
+        return
 
+    st.subheader("📊 Factor Analysis")
 
+    try:
+        # Define factors with descriptions
+        factors = {
+            "Size": {
+                "func": lambda x: x.info.get('marketCap', np.nan),
+                "help": "Market capitalization of the company, representing its size."
+            },
+            "Value": {
+                "func": lambda x: x.info.get('priceToBook', np.nan),
+                "help": "Price-to-book ratio, indicating how the market values the company relative to its book value."
+            },
+            "Momentum": {
+                "func": lambda x: x.info.get('beta', np.nan),
+                "help": "Beta value, representing the stock's volatility compared to the market."
+            },
+            "Growth": {
+                "func": lambda x: x.info.get('forwardPE', np.nan),
+                "help": "Forward price-to-earnings ratio, indicating expected growth based on future earnings."
+            },
+            "Profitability": {
+                "func": lambda x: x.info.get('returnOnEquity', np.nan),
+                "help": "Return on equity, measuring the company's profitability relative to shareholder equity."
+            }
+        }
+
+        # Collect factor data for each ticker
+        factor_data = []
+        for ticker in st.session_state.portfolio['Ticker']:
+            stock = yf.Ticker(ticker)
+            stock_factors = {factor: factors[factor]["func"](stock) for factor in factors.keys()}
+            stock_factors['Ticker'] = ticker
+            factor_data.append(stock_factors)
+
+        # Convert to DataFrame
+        factor_df = pd.DataFrame(factor_data)
+
+        # Normalize factor values for comparison
+        normalized_df = factor_df.copy()
+        for factor in factors.keys():
+            normalized_df[factor] = (factor_df[factor] - factor_df[factor].mean()) / factor_df[factor].std()
+
+        # Display factor data
+        st.write("### Raw Factor Data")
+        st.dataframe(factor_df, use_container_width=True)
+
+        st.write("### Normalized Factor Data")
+        st.dataframe(normalized_df, use_container_width=True)
+
+        # Visualize factor exposure
+        st.write("### Factor Exposure")
+        fig = px.bar(
+            normalized_df.melt(id_vars=['Ticker'], value_vars=factors.keys(), var_name='Factor', value_name='Exposure'),
+            x='Ticker',
+            y='Exposure',
+            color='Factor',
+            barmode='group',
+            title="Portfolio Factor Exposure"
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+        # Display factor descriptions
+        st.write("### Factor Descriptions")
+        for factor, details in factors.items():
+            st.markdown(f"**{factor}:** {details['help']}")
+
+    except Exception as e:
+        st.error(f"Error performing factor analysis: {str(e)}")
+def stress_test_portfolio():
+    """Stress test portfolio under different market scenarios"""
+    if st.session_state.portfolio.empty or 'daily_returns' not in st.session_state or st.session_state.daily_returns.empty:
+        st.warning("Not enough data to perform stress tests.")
+        return
+
+    st.subheader("⚡ Stress Test Your Portfolio")
+
+    # Define stress scenarios
+    scenarios = {
+        "Market Crash (-30%)": -0.30,
+        "Sector Shock (-20%)": -0.20,
+        "Bull Market (+15%)": 0.15,
+        "Custom Scenario": None
+    }
+
+    selected_scenario = st.selectbox("Select Stress Scenario", list(scenarios.keys()))
+    custom_change = 0
+
+    if selected_scenario == "Custom Scenario":
+        custom_change = st.number_input("Enter Custom Percentage Change (e.g., -0.10 for -10%)", value=0.0, step=0.01)
+
+    # Apply stress test
+    change = scenarios[selected_scenario] if selected_scenario != "Custom Scenario" else custom_change
+    if change is not None:
+        stressed_portfolio = st.session_state.portfolio.copy()
+        stressed_portfolio['Stressed Value'] = stressed_portfolio['Value'] * (1 + change)
+        stressed_portfolio['Stressed P/L'] = stressed_portfolio['Stressed Value'] - (stressed_portfolio['Avg Price'] * stressed_portfolio['Shares'])
+
+        # Display results
+        st.write("### 📉 Stressed Portfolio")
+        st.dataframe(stressed_portfolio[['Ticker', 'Shares', 'Avg Price', 'Value', 'Stressed Value', 'P/L', 'Stressed P/L']], use_container_width=True)
+
+        # Metrics
+        total_value = stressed_portfolio['Stressed Value'].sum()
+        total_pl = stressed_portfolio['Stressed P/L'].sum()
+        pl_percent = (total_pl / stressed_portfolio['Value'].sum() * 100) if stressed_portfolio['Value'].sum() > 0 else 0
+
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Total Stressed Value", f"${total_value:,.2f}")
+        col2.metric("Total Stressed P/L", f"${total_pl:,.2f}", f"{pl_percent:.2f}%")
+        col3.metric("Positions", len(stressed_portfolio))
+def portfolio_tab():
+    tab1, tab2 = st.tabs(["Current Portfolio", "Add Positions"])
+    with tab1:
+        display_portfolio()
+        display_portfolio_performance()
+        display_risk_metrics()
+        display_advanced_metrics()  # New metrics
+        optimize_portfolio()
+        efficient_frontier_and_monte_carlo()
+        factor_analysis()
+        stress_test_portfolio()
+        export_portfolio()
+    with tab2:
+        portfolio_add_form()
 def main():
     st.title("📈 Stock Portfolio Tracker")
 
