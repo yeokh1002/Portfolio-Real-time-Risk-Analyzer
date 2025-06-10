@@ -6,13 +6,71 @@ import plotly.graph_objects as go
 import plotly.express as px
 from datetime import datetime, timedelta
 import yfinance as yf
-
-
+from scipy.optimize import minimize
+import matplotlib.pyplot as plt
 if 'portfolio' not in st.session_state:
     st.session_state.portfolio = pd.DataFrame(columns=[
         'Ticker', 'Shares', 'Avg Price', 'Date Added', 'Current Price', 'Value', 'P/L'
     ])
+def efficient_frontier_and_monte_carlo():
+    """Generate Efficient Frontier and Monte Carlo Simulations"""
+    if 'daily_returns' not in st.session_state or st.session_state.daily_returns.empty:
+        st.warning("Not enough data to simulate portfolios.")
+        return
 
+    st.subheader("📊 Efficient Frontier & Monte Carlo Simulation")
+
+    daily_returns = st.session_state.daily_returns
+    mean_returns = daily_returns.mean()
+    cov_matrix = daily_returns.cov()
+    tickers = daily_returns.columns.tolist()
+    num_assets = len(tickers)
+
+    num_portfolios = 10000
+    results = np.zeros((3, num_portfolios))
+    weights_record = []
+
+    for i in range(num_portfolios):
+        weights = np.random.random(num_assets)
+        weights /= np.sum(weights)
+        weights_record.append(weights)
+
+        portfolio_return = np.sum(mean_returns * weights) * 252
+        portfolio_stddev = np.sqrt(np.dot(weights.T, np.dot(cov_matrix * 252, weights)))
+        sharpe_ratio = portfolio_return / portfolio_stddev
+
+        results[0, i] = portfolio_return
+        results[1, i] = portfolio_stddev
+        results[2, i] = sharpe_ratio
+
+    # Convert to DataFrame
+    results_df = pd.DataFrame({
+        'Return': results[0],
+        'Volatility': results[1],
+        'Sharpe Ratio': results[2]
+    })
+
+    for idx, ticker in enumerate(tickers):
+        results_df[ticker] = [w[idx] for w in weights_record]
+
+    # Plot Efficient Frontier
+    fig = px.scatter(
+        results_df,
+        x='Volatility',
+        y='Return',
+        color='Sharpe Ratio',
+        hover_data=tickers,
+        title="Efficient Frontier - Simulated Portfolios",
+        color_continuous_scale='Viridis',
+        height=600
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
+
+    # Display Top 5 Portfolios by Sharpe Ratio
+    st.write("### 🔝 Top 5 Portfolios by Sharpe Ratio")
+    top5 = results_df.sort_values(by='Sharpe Ratio', ascending=False).head(5)
+    st.dataframe(top5[tickers + ['Return', 'Volatility', 'Sharpe Ratio']].style.format("{:.2%}"), use_container_width=True)
 
 # Portfolio Management Functions
 def add_to_portfolio(ticker, shares, price):
@@ -230,7 +288,60 @@ def display_portfolio_performance():
         except:
             st.warning("Could not load historical performance data")
 
+def optimize_portfolio():
+    """Optimize portfolio weights to maximize Sharpe Ratio"""
+    if 'daily_returns' not in st.session_state or st.session_state.daily_returns.empty:
+        st.warning("Not enough data to optimize portfolio.")
+        return
 
+    st.subheader("📌 Portfolio Optimization")
+
+    daily_returns = st.session_state.daily_returns
+    tickers = daily_returns.columns.tolist()
+    mean_returns = daily_returns.mean()
+    cov_matrix = daily_returns.cov()
+
+    num_assets = len(tickers)
+    initial_weights = np.array([1.0 / num_assets] * num_assets)
+
+    def portfolio_perf(weights):
+        ret = np.dot(weights, mean_returns)
+        vol = np.sqrt(np.dot(weights.T, np.dot(cov_matrix, weights)))
+        sharpe = ret / vol if vol != 0 else 0
+        return ret, vol, sharpe
+
+    def neg_sharpe(weights):
+        return -portfolio_perf(weights)[2]
+
+    def constraint_sum(weights):
+        return np.sum(weights) - 1
+
+    bounds = tuple((0, 1) for _ in range(num_assets))
+    constraints = {'type': 'eq', 'fun': constraint_sum}
+
+    result = minimize(neg_sharpe, initial_weights, method='SLSQP', bounds=bounds, constraints=constraints)
+
+    if result.success:
+        optimal_weights = result.x
+        returns, vol, sharpe = portfolio_perf(optimal_weights)
+
+        df = pd.DataFrame({
+            'Ticker': tickers,
+            'Optimal Weight': optimal_weights
+        }).sort_values(by='Optimal Weight', ascending=False)
+
+        st.write("### 🧠 Optimal Portfolio Allocation")
+        fig = px.pie(df, names='Ticker', values='Optimal Weight', hole=0.3)
+        st.plotly_chart(fig, use_container_width=True)
+        st.dataframe(df.style.format({'Optimal Weight': '{:.2%}'}), use_container_width=True)
+
+        st.write("### 📈 Expected Performance")
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Expected Return", f"{returns * 252:.2%}")
+        col2.metric("Expected Volatility", f"{vol * np.sqrt(252):.2%}")
+        col3.metric("Sharpe Ratio", f"{sharpe:.2f}")
+    else:
+        st.error("Optimization failed. Try again later.")
 def export_portfolio():
     st.subheader("🧾 Export Portfolio")
     if not st.session_state.portfolio.empty:
@@ -243,10 +354,11 @@ def portfolio_tab():
         display_portfolio_performance()
         display_risk_metrics()
         display_advanced_metrics()  # New metrics
+        optimize_portfolio()
+        efficient_frontier_and_monte_carlo()
         export_portfolio()
     with tab2:
         portfolio_add_form()
-
 
 def display_market_data():
     """Display market data for a selected ticker"""
@@ -447,6 +559,7 @@ def display_advanced_metrics():
         st.plotly_chart(fig, use_container_width=True)
     except:
         pass
+
 
 def main():
     st.title("📈 Stock Portfolio Tracker")
