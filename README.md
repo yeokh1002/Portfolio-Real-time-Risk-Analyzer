@@ -31,10 +31,10 @@ A real-time portfolio analysis tool that provides stock price information, calcu
 ### Installation
 1. Clone the repo.
    ```bash
-   git clone https://github.com/yeokh1002/Portfolio-Real-time-Risk-Analyzer.git
+   git clone https://github.com/yeokh1002/Portfolio-Risk-Analyzer-and-Optimizer.git
 2. Navigate to the directory.
    ```bash
-   cd Portfolio-Real-time-Risk-Analyzer
+   cd Portfolio-Risk-Analyzer-and-Optimizer
 3. Run the streamlit application.
    ```bash
    streamlit run main.py
